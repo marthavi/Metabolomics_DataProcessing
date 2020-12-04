@@ -1,0 +1,320 @@
+---
+title: "Cacao DataProcessing"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# 1. Environment
+```{r environ, echo=TRUE, message=FALSE, warning=FALSE}
+
+library(timeSeries)
+library(reshape2)
+library(cluster)
+library(gplots)
+library(ggfortify)
+library(RColorBrewer)
+library(ggplot2)
+library(tidyverse)
+library(base)
+library(graphics)
+library(stats)
+library(fBasics)
+library(pvclust)
+library(pca3d)
+library(randomForest)
+library(varSelRF)
+library(e1071)
+library(VennDiagram)
+library(googlesheets4)
+library(MetabolAnalyze)
+```
+
+#2. Call the data
+```{r}
+raw.data <- read.csv("Data/Buenaventura05222020.csv")
+min.fill <- read.csv("Data/cleanData.csv") %>% 
+  select(-1)
+```
+
+
+# Data processing
+# 3.3. Data distribution
+The density graph allow us to identify if the data present a normal distribution
+```{r}
+#1. change the variable names 
+
+metaData <- raw.data[, c(1:3)]
+
+cleanData <- cbind(metaData, min.fill)
+clData <- cleanData
+
+colnames(cleanData)[4:4402] <- seq(1,4399)
+
+#2. Make a frequency function
+clean.melt <- melt(cleanData, id.vars= seq(1, 3), measure.vars= seq(4, 4402)) 
+
+```
+
+```{r}
+#3. Extract signal ID
+metab.ID <- as.data.frame(colnames(min.fill))
+colnames(metab.ID) <- "signal"        
+
+#4. signal name acquisition
+clean.melt$signal <- rep(metab.ID$signal, each=54)
+head(clean.melt, 56)
+
+```
+
+### Density graph
+Data W/O log transformation or scale
+```{r density, warning= FALSE}
+ggplot(clean.melt, aes(x = value, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-20, 150)
+```
+
+
+## Log transformation
+```{r}
+clean.melt <- clean.melt %>% 
+  mutate(Log_10 = log10(value),
+         Log_2 = log2(value),
+         Log_n = log(value))
+head(clean.melt)
+```
+
+
+## Log10 Density Graph
+```{r}
+ggplot(clean.melt, aes(x = Log_10, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-10, 10)
+
+```
+
+
+## Log2 Density Graph
+```{r}
+ggplot(clean.melt, aes(x = Log_2, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-30, 30)
+
+```
+
+## Natural Log Density Graph
+```{r}
+ggplot(clean.melt, aes(x = Log_n, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-30, 30)
+```
+
+## 2. Data Transform and Scale 
+
+```{r}
+# Transform the matrix data to Log 10, Log 2, y log n
+data.Log10 <- clData %>% 
+  select(-c(1:3)) %>% 
+  map_df(log10)
+
+data.Log2 <- clData %>% 
+  select(-c(1:3)) %>% 
+  map_df(log2)
+
+data.Logn <- clData %>% 
+  select(-c(1:3)) %>% 
+  map_df(log)
+```
+
+
+# Function for centering and scaling
+
+```{r}
+center_colmeans <- function(x) {
+  xcenter = colMeans(x)
+  x - rep(xcenter, rep.int(nrow(x), ncol(x)))
+}
+
+
+# Autoscale
+center_colstd.dev <- function(x) {
+  xcenter = colStdevs(x)
+  x / rep(xcenter, rep.int(nrow(x), ncol(x)))
+}
+
+
+# Pareto
+center_colpareto <- function(x) {
+  xcenter = sqrt(colStdevs(x)) 
+  x / rep(xcenter, rep.int(nrow(x), ncol(x)))
+}
+
+```
+
+
+
+# Autoscale Log10
+
+```{r}
+df.center <- center_colmeans(data.Log10)
+Autoscale.Log10 <- center_colstd.dev(df.center)
+```
+
+
+1. Density Autoscale Log 10
+```{r}
+
+A.10 <- cbind(metaData, Autoscale.Log10)
+colnames(A.10)[4:4402] <- seq(1,4399)
+
+
+A10.melt <- melt(A.10, id.vars= seq(1, 3), measure.vars= seq(4, 4402)) 
+
+
+A10.melt$signal <- rep(metab.ID$signal, each=54)
+head(A10.melt, 56)
+
+ggplot(A10.melt, aes(x = value, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-10, 10)
+
+```
+
+
+# Pareto Scale Log10
+
+```{r}
+df.center <- center_colmeans(data.Log10)
+Pareto.Log10 <- center_colpareto(df.center)
+```
+
+
+2. Density Pareto Log 10
+```{r}
+
+P.10 <- cbind(metaData, Pareto.Log10)
+colnames(P.10)[4:4402] <- seq(1,4399)
+
+
+P10.melt <- melt(P.10, id.vars= seq(1, 3), measure.vars= seq(4, 4402)) 
+
+
+P10.melt$signal <- rep(metab.ID$signal, each=54)
+head(P10.melt, 56)
+
+ggplot(P10.melt, aes(x = value, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-10, 10)
+
+```
+
+# Autoscale Log2
+
+```{r}
+df.center <- center_colmeans(data.Log2)
+Autoscale.Log2 <- center_colstd.dev(df.center)
+```
+
+
+1. Density Autoscale Log 2
+```{r}
+
+A.2 <- cbind(metaData, Autoscale.Log2)
+colnames(A.2)[4:4402] <- seq(1,4399)
+
+
+A2.melt <- melt(A.2, id.vars= seq(1, 3), measure.vars= seq(4, 4402)) 
+
+
+A2.melt$signal <- rep(metab.ID$signal, each=54)
+head(A2.melt, 56)
+
+ggplot(A2.melt, aes(x = value, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-10, 10)
+
+```
+
+
+# Pareto Scale Log2
+
+```{r}
+df.center <- center_colmeans(data.Log2)
+Pareto.Log2 <- center_colpareto(df.center)
+```
+
+
+2. Density Pareto Log 2
+```{r}
+
+P.2 <- cbind(metaData, Pareto.Log2)
+colnames(P.2)[4:4402] <- seq(1,4399)
+
+
+P2.melt <- melt(P.2, id.vars= seq(1, 3), measure.vars= seq(4, 4402)) 
+
+
+P2.melt$signal <- rep(metab.ID$signal, each=54)
+head(P2.melt, 56)
+
+ggplot(P2.melt, aes(x = value, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-20, 10)
+
+```
+
+
+# Autoscale Logn
+
+```{r}
+df.center <- center_colmeans(data.Logn)
+Autoscale.Logn <- center_colstd.dev(df.center)
+```
+
+
+1. Density Autoscale Log n
+```{r}
+
+A.n <- cbind(metaData, Autoscale.Logn)
+colnames(A.n)[4:4402] <- seq(1,4399)
+
+
+An.melt <- melt(A.n, id.vars= seq(1, 3), measure.vars= seq(4, 4402)) 
+
+
+An.melt$signal <- rep(metab.ID$signal, each=54)
+head(An.melt, 56)
+
+ggplot(An.melt, aes(x = value, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-10, 10)
+
+```
+
+
+# Pareto Scale Ln
+
+```{r}
+df.center <- center_colmeans(data.Logn)
+Pareto.Logn <- center_colpareto(df.center)
+```
+
+
+2. Density Pareto Ln
+```{r}
+
+P.n <- cbind(metaData, Pareto.Logn)
+colnames(P.n)[4:4402] <- seq(1,4399)
+
+
+Pn.melt <- melt(P.n, id.vars= seq(1, 3), measure.vars= seq(4, 4402)) 
+
+
+Pn.melt$signal <- rep(metab.ID$signal, each=54)
+head(Pn.melt, 56)
+
+ggplot(Pn.melt, aes(x = value, fill = Time)) + geom_density(alpha = 0.7) + facet_grid(Region ~ ., scales = "free_y") + xlim(-15, 10)
+
+```
+
+
+### write final processed data
+Log2 and autoscale data processing was used based on the recent literature. But very mild differences were found with log10 transformation.
+
+```{r}
+df.autoscale <- Autoscale.Log2
+write.csv(df.autoscale, file = "Data/df_autoscale.csv")
+write.csv(metaData, file = "Data/metaData.csv")
+write.csv(data.Log2, file = "Data/data_Log2.csv")
+write.csv(clData, file = "Data/clData.csv")
+```
+
+
+
+
